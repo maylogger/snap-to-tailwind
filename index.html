@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <title>拍照抽色 → 3 色（背景/主字/次字）→ Tailwind 50–950</title>
+    <title>拍照抽色 → 背景 + 4 前景色 → Tailwind 50–950</title>
     <style>
         :root {
             color-scheme: light;
@@ -82,6 +82,7 @@
 
         .previewTop {
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
             padding: 14px;
             align-items: baseline;
@@ -94,6 +95,15 @@
 
         .previewSub {
             font-size: 14px;
+        }
+
+        .previewFg3,
+        .previewFg4 {
+            font-size: 13px;
+        }
+
+        .previewFg4 {
+            opacity: 0.85;
         }
 
         .swatches {
@@ -144,24 +154,12 @@
             font-size: 12px;
             background: #fff;
         }
-
-        .warn {
-            color: #92400e;
-            background: #fffbeb;
-            border-color: #fcd34d;
-        }
-
-        .ok {
-            color: #065f46;
-            background: #ecfdf5;
-            border-color: #6ee7b7;
-        }
     </style>
 </head>
 
 <body>
     <div class="wrap">
-        <h1>拍照抽色 → 背景/主字/次字 → 產生 Tailwind 50–950</h1>
+        <h1>拍照抽色 → 背景 + 4 前景色 → 產生 Tailwind 50–950</h1>
 
         <div class="grid">
             <div class="card">
@@ -179,26 +177,24 @@
             </div>
 
             <div class="card">
-                <div class="row" style="justify-content: space-between;">
-                    <div class="row">
-                        <span class="pill">bg：<span id="bgHex">—</span></span>
-                        <span class="pill">fg1：<span id="fg1Hex">—</span></span>
-                        <span class="pill">fg2：<span id="fg2Hex">—</span></span>
-                    </div>
-                    <div class="row">
-                        <span id="c1" class="pill">主字對比：—</span>
-                        <span id="c2" class="pill">次字對比：—</span>
-                    </div>
+                <div class="row" style="flex-wrap: wrap;">
+                    <span class="pill" id="pillBg">bg：<span id="bgHex">—</span></span>
+                    <span class="pill" id="pillFg1">fg1：<span id="fg1Hex">—</span></span>
+                    <span class="pill" id="pillFg2">fg2：<span id="fg2Hex">—</span></span>
+                    <span class="pill" id="pillFg3">fg3：<span id="fg3Hex">—</span></span>
+                    <span class="pill" id="pillFg4">fg4：<span id="fg4Hex">—</span></span>
                 </div>
 
                 <div style="height:10px"></div>
                 <div id="preview" class="preview">
                     <div id="previewTop" class="previewTop">
-                        <div class="previewTitle">標題文字（主）</div>
-                        <div class="previewSub">副標文字（次）</div>
+                        <div class="previewTitle">標題（fg1）</div>
+                        <div class="previewSub">副標（fg2）</div>
+                        <div class="previewFg3">說明（fg3）</div>
+                        <div class="previewFg4">輔助（fg4）</div>
                     </div>
                     <div style="padding:14px">
-                        <div class="muted">以下是以 bg/fg1/fg2 各自生成的 Tailwind 50–950（示意）。</div>
+                        <div class="muted">以下是以 bg / fg1～fg4 各自生成的 Tailwind 50–950（示意）。</div>
                         <div style="height:10px"></div>
 
                         <div class="muted" style="font-weight:700;margin-bottom:6px;">bg</div>
@@ -211,6 +207,14 @@
 
                         <div class="muted" style="font-weight:700;margin-bottom:6px;">fg2</div>
                         <div id="swFg2" class="swatches"></div>
+                        <div style="height:10px"></div>
+
+                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg3</div>
+                        <div id="swFg3" class="swatches"></div>
+                        <div style="height:10px"></div>
+
+                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg4</div>
+                        <div id="swFg4" class="swatches"></div>
                     </div>
                 </div>
 
@@ -416,7 +420,7 @@
         }
 
         /* =========================
-           從照片挑 bg / fg1 / fg2
+           從照片挑 bg / fg1～fg4（依對比排行）
         ========================= */
         function pickBgFromBorder(ctx, w, h) {
             const m = Math.round(Math.min(w, h) * 0.08); // 邊框厚度 8%
@@ -434,29 +438,44 @@
 
         function pickFgColors(ctx, w, h, bgRgb) {
             const pixels = samplePixels(ctx, w, h, { sx: 0, sy: 0, sw: w, sh: h, step: 4, max: 16000 });
-            const clusters = kmeans(pixels, 12, 10);
+            const clusters = kmeans(pixels, 14, 10);
 
-            // 依對比度排序
+            // 依對比度排序（高到低）
             const scored = clusters.map(c => ({
                 rgb: c.rgb,
                 count: c.count,
                 contrast: contrastRatio(c.rgb, bgRgb)
             })).sort((a, b) => b.contrast - a.contrast);
 
-            const fg1 = scored[0]?.rgb || [255, 255, 255];
+            const fgList = [];
+            const minContrast = [4.5, 3.5, 3.0, 2.8]; // fg1～fg4 最低對比門檻
+            const dEThreshold = 0.06; // 與已選前景色需有差異
 
-            // fg2：對比仍高，且與 fg1 有差異（OKLab 距離門檻）
-            let fg2 = null;
-            for (const s of scored.slice(1)) {
-                const dE = deltaE_oklab(s.rgb, fg1);
-                if (dE < 0.08) continue;                 // 太像就跳過
-                if (s.contrast < 3.0) continue;          // 次要文字至少 3.0
-                fg2 = s.rgb;
-                break;
+            for (let i = 0; i < 4; i++) {
+                const threshold = minContrast[i];
+                let picked = null;
+                for (const s of scored) {
+                    const okContrast = s.contrast >= threshold;
+                    const okDist = fgList.every(prev => deltaE_oklab(s.rgb, prev) >= dEThreshold);
+                    if (okContrast && okDist) {
+                        picked = s.rgb;
+                        break;
+                    }
+                }
+                fgList.push(picked || (scored[i]?.rgb || (fgList[fgList.length - 1] || [255, 255, 255])));
             }
-            if (!fg2) fg2 = scored[1]?.rgb || fg1;
 
-            return { fg1, fg2, c1: contrastRatio(fg1, bgRgb), c2: contrastRatio(fg2, bgRgb) };
+            const [fg1, fg2, fg3, fg4] = fgList;
+            return { fg1, fg2, fg3, fg4 };
+        }
+
+        /** 依對比選出該色 100 或 900 作為 pill 內文字色 */
+        function textColorForPalette(baseRgb, palette) {
+            const r100 = hexToRgb(palette[100]);
+            const r900 = hexToRgb(palette[900]);
+            return contrastRatio(r100, baseRgb) >= contrastRatio(r900, baseRgb)
+                ? palette[100]
+                : palette[900];
         }
 
         /* =========================
@@ -473,12 +492,19 @@
         const bgHexEl = document.getElementById("bgHex");
         const fg1HexEl = document.getElementById("fg1Hex");
         const fg2HexEl = document.getElementById("fg2Hex");
-        const c1El = document.getElementById("c1");
-        const c2El = document.getElementById("c2");
+        const fg3HexEl = document.getElementById("fg3Hex");
+        const fg4HexEl = document.getElementById("fg4Hex");
+        const pillBg = document.getElementById("pillBg");
+        const pillFg1 = document.getElementById("pillFg1");
+        const pillFg2 = document.getElementById("pillFg2");
+        const pillFg3 = document.getElementById("pillFg3");
+        const pillFg4 = document.getElementById("pillFg4");
 
         const swBg = document.getElementById("swBg");
         const swFg1 = document.getElementById("swFg1");
         const swFg2 = document.getElementById("swFg2");
+        const swFg3 = document.getElementById("swFg3");
+        const swFg4 = document.getElementById("swFg4");
 
         let currentImg = null;
 
@@ -502,30 +528,46 @@
                 const w = cvs.width, h = cvs.height;
 
                 const bg = pickBgFromBorder(ctx, w, h);
-                const { fg1, fg2, c1, c2 } = pickFgColors(ctx, w, h, bg);
+                const { fg1, fg2, fg3, fg4 } = pickFgColors(ctx, w, h, bg);
 
                 const bgHex = rgbToHex(bg);
                 const fg1Hex = rgbToHex(fg1);
                 const fg2Hex = rgbToHex(fg2);
-
-                bgHexEl.textContent = bgHex;
-                fg1HexEl.textContent = fg1Hex;
-                fg2HexEl.textContent = fg2Hex;
-
-                setContrastPill(c1El, c1, 4.5);
-                setContrastPill(c2El, c2, 3.0);
-
-                preview.style.background = bgHex;
-                previewTop.querySelector(".previewTitle").style.color = fg1Hex;
-                previewTop.querySelector(".previewSub").style.color = fg2Hex;
+                const fg3Hex = rgbToHex(fg3);
+                const fg4Hex = rgbToHex(fg4);
 
                 const palBg = makeOklchPalette(bg);
                 const palFg1 = makeOklchPalette(fg1);
                 const palFg2 = makeOklchPalette(fg2);
+                const palFg3 = makeOklchPalette(fg3);
+                const palFg4 = makeOklchPalette(fg4);
+
+                bgHexEl.textContent = bgHex;
+                fg1HexEl.textContent = fg1Hex;
+                fg2HexEl.textContent = fg2Hex;
+                fg3HexEl.textContent = fg3Hex;
+                fg4HexEl.textContent = fg4Hex;
+
+                [pillBg, pillFg1, pillFg2, pillFg3, pillFg4].forEach((el, i) => {
+                    const baseRgb = [bg, fg1, fg2, fg3, fg4][i];
+                    const palette = [palBg, palFg1, palFg2, palFg3, palFg4][i];
+                    const baseHex = [bgHex, fg1Hex, fg2Hex, fg3Hex, fg4Hex][i];
+                    el.style.background = baseHex;
+                    el.style.color = textColorForPalette(baseRgb, palette);
+                    el.style.borderColor = "rgba(0,0,0,0.12)";
+                });
+
+                preview.style.background = bgHex;
+                previewTop.querySelector(".previewTitle").style.color = fg1Hex;
+                previewTop.querySelector(".previewSub").style.color = fg2Hex;
+                previewTop.querySelector(".previewFg3").style.color = fg3Hex;
+                previewTop.querySelector(".previewFg4").style.color = fg4Hex;
 
                 renderSwatches(swBg, palBg);
                 renderSwatches(swFg1, palFg1);
                 renderSwatches(swFg2, palFg2);
+                renderSwatches(swFg3, palFg3);
+                renderSwatches(swFg4, palFg4);
 
                 const tw = {
                     theme: {
@@ -533,7 +575,9 @@
                             colors: {
                                 photoBg: palBg,
                                 photoFg: palFg1,
-                                photoFg2: palFg2
+                                photoFg2: palFg2,
+                                photoFg3: palFg3,
+                                photoFg4: palFg4
                             }
                         }
                     }
@@ -544,6 +588,8 @@
                     ...STOPS.map(s => `  --photo-bg-${s}: ${palBg[s]};`),
                     ...STOPS.map(s => `  --photo-fg-${s}: ${palFg1[s]};`),
                     ...STOPS.map(s => `  --photo-fg2-${s}: ${palFg2[s]};`),
+                    ...STOPS.map(s => `  --photo-fg3-${s}: ${palFg3[s]};`),
+                    ...STOPS.map(s => `  --photo-fg4-${s}: ${palFg4[s]};`),
                     "}"
                 ].join("\n");
 
@@ -576,13 +622,6 @@
             await navigator.clipboard.writeText(txt);
             statusEl.textContent = "已複製 CSS 變數。";
         });
-
-        function setContrastPill(el, ratio, okThreshold) {
-            const v = Number(ratio || 0);
-            el.textContent = `對比：${v.toFixed(2)}`;
-            el.classList.remove("ok", "warn");
-            el.classList.add(v >= okThreshold ? "ok" : "warn");
-        }
 
         function renderSwatches(root, palette) {
             root.innerHTML = "";
