@@ -200,97 +200,162 @@
     return closestStop;
   }
 
+  /* =========================
+     sRGB ↔ OKLab ↔ OKLCH 轉換
+     參考 Björn Ottosson OKLab 標準矩陣
+  ========================= */
+
+  function srgbChannelToLinear(c) {
+    c = c / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+
+  function linearToSrgbChannel(c) {
+    c = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    return clamp(Math.round(c * 255), 0, 255);
+  }
+
+  function rgbToOklabArr(r, g, b) {
+    var R = srgbChannelToLinear(r);
+    var G = srgbChannelToLinear(g);
+    var B = srgbChannelToLinear(b);
+    var l = 0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B;
+    var m = 0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B;
+    var s = 0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B;
+    var lp = Math.cbrt(l),
+      mp = Math.cbrt(m),
+      sp = Math.cbrt(s);
+    return [
+      0.2104542553 * lp + 0.793617785 * mp - 0.0040720468 * sp,
+      1.9779984951 * lp - 2.428592205 * mp + 0.4505937099 * sp,
+      0.0259040371 * lp + 0.7827717662 * mp - 0.808675766 * sp,
+    ];
+  }
+
+  function oklabToLinearRgb(L, a, b) {
+    var lp = L + 0.3963377774 * a + 0.2158037573 * b;
+    var mp = L - 0.1055613458 * a - 0.0638541728 * b;
+    var sp = L - 0.0894841775 * a - 1.291485548 * b;
+    var l = lp * lp * lp;
+    var m = mp * mp * mp;
+    var s = sp * sp * sp;
+    return [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+    ];
+  }
+
+  function oklabToOklchArr(L, a, b) {
+    var C = Math.sqrt(a * a + b * b);
+    var h = Math.atan2(b, a) * (180 / Math.PI);
+    if (h < 0) h += 360;
+    return [L, C, h];
+  }
+
+  function oklchToOklabArr(L, C, h) {
+    var hr = h * (Math.PI / 180);
+    return [L, C * Math.cos(hr), C * Math.sin(hr)];
+  }
+
+  function isLinearRgbInGamut(r, g, b) {
+    var eps = 0.002;
+    return (
+      r >= -eps &&
+      r <= 1 + eps &&
+      g >= -eps &&
+      g <= 1 + eps &&
+      b >= -eps &&
+      b <= 1 + eps
+    );
+  }
+
+  function oklchToRgbClamped(L, C, h) {
+    var c = C;
+    for (var i = 0; i < 50; i++) {
+      var lab = oklchToOklabArr(L, c, h);
+      var rgb = oklabToLinearRgb(lab[0], lab[1], lab[2]);
+      if (isLinearRgbInGamut(rgb[0], rgb[1], rgb[2])) {
+        return {
+          r: linearToSrgbChannel(rgb[0]),
+          g: linearToSrgbChannel(rgb[1]),
+          b: linearToSrgbChannel(rgb[2]),
+        };
+      }
+      c *= 0.95;
+    }
+    var lab0 = oklchToOklabArr(L, 0, h);
+    var rgb0 = oklabToLinearRgb(lab0[0], lab0[1], lab0[2]);
+    return {
+      r: linearToSrgbChannel(rgb0[0]),
+      g: linearToSrgbChannel(rgb0[1]),
+      b: linearToSrgbChannel(rgb0[2]),
+    };
+  }
+
   /**
-   * 先有 valueStop，再以 valueStop 為錨點產生整條 50–950
-   * 錨點：(0, lMax)、(valueStop, 輸入色 lightness)、(1000, lMin)，其餘線性插值
-   * 在 stop === valueStop 那格直接塞入輸入色
-   * 顏色計算一律用 chroma-js（與 ref 一致）
+   * 以 OKLCH 空間做 Perceived 模式色盤插值。
+   * 錨點：(0, LMax)、(valueStop, L₀)、(1000, LMin)，L 線性插值。
+   * C 在較亮側（stop ≤ valueStop）用 stop 比例，較暗側（stop > valueStop）與 L 等比縮放。
+   * h 保持不變。在 stop === valueStop 直接使用輸入色。
    */
   function createSwatches(config) {
     var value = config.value;
     var valueStop = config.valueStop;
     var hexColor = value.indexOf('#') === 0 ? value : '#' + value;
 
-    var h0, s0, l0;
-    if (typeof chroma !== 'undefined') {
-      var hslArr = chroma(hexColor).hsl();
-      h0 = hslArr[0];
-      s0 = hslArr[1] * 100;
-      l0 = hslArr[2] * 100;
-    } else {
-      var hsl = hexToHSL(hexColor);
-      h0 = hsl.h;
-      s0 = hsl.s;
-      l0 = hsl.l;
-    }
+    var rgb0 = hexToRGB(hexColor);
+    var oklab0 = rgbToOklabArr(rgb0.r, rgb0.g, rgb0.b);
+    var oklch0 = oklabToOklchArr(oklab0[0], oklab0[1], oklab0[2]);
+    var L0 = oklch0[0];
+    var C0 = oklch0[1];
+    var h0 = oklch0[2];
+    if (isNaN(h0)) h0 = 0;
 
-    var valueStopIdx = ALL_STOPS.indexOf(valueStop);
-    if (valueStopIdx === -1) valueStopIdx = 5;
-
-    var lMax = 97;
-    var lMin = 5;
+    var LMax = 0.97;
+    var LMin = 0.13;
 
     var result = [];
     for (var i = 0; i < ALL_STOPS.length; i++) {
       var stop = ALL_STOPS[i];
+
       var L;
       if (stop <= valueStop) {
-        if (valueStop === 0) {
-          L = l0;
-        } else {
-          L = lMax + (l0 - lMax) * (stop / valueStop);
-        }
+        L = valueStop === 0 ? L0 : LMax + (L0 - LMax) * (stop / valueStop);
       } else {
-        if (valueStop === 1000) {
-          L = l0;
-        } else {
-          L = l0 + (lMin - l0) * ((stop - valueStop) / (1000 - valueStop));
-        }
+        L =
+          valueStop === 1000
+            ? L0
+            : L0 + (LMin - L0) * ((stop - valueStop) / (1000 - valueStop));
       }
-      L = clamp(L, 0, 100);
+      L = clamp(L, 0, 1);
 
-      var idx = ALL_STOPS.indexOf(stop);
-      var scale = valueStopIdx === 0 ? 1 : idx / valueStopIdx;
-      if (idx > valueStopIdx) {
-        scale =
-          valueStopIdx === ALL_STOPS.length - 1
-            ? 1
-            : 1 +
-              (idx - valueStopIdx) *
-                (0.3 / (ALL_STOPS.length - 1 - valueStopIdx));
+      var C;
+      if (stop <= valueStop) {
+        C = valueStop === 0 ? C0 : C0 * (stop / valueStop);
+      } else {
+        C = L0 > 0 ? C0 * (L / L0) : 0;
       }
-      var sScale = clamp(scale, 0.3, 1.2);
-      var hScale = 1;
-      var S = clamp(s0 * sScale, 0, 100);
+      C = Math.max(0, C);
 
       var hex;
       if (stop === valueStop) {
         hex = (
           hexColor.indexOf('#') === 0 ? hexColor : '#' + hexColor
         ).toUpperCase();
-      } else if (typeof chroma !== 'undefined') {
-        hex = chroma
-          .hsl(h0, S / 100, L / 100)
-          .hex()
-          .toUpperCase();
       } else {
-        hex = HSLToHex(h0, S, L).toUpperCase();
+        var mapped = oklchToRgbClamped(L, C, h0);
+        hex = rgbToHex(mapped).toUpperCase();
       }
 
-      var outHsl;
-      if (typeof chroma !== 'undefined') {
-        var o = chroma(hex).hsl();
-        outHsl = { h: o[0], s: o[1] * 100, l: o[2] * 100 };
-      } else {
-        outHsl = hexToHSL(hex);
-      }
+      var outHsl = hexToHSL(hex);
       result.push({
         stop: stop,
         hex: hex,
-        h: outHsl.h,
-        hScale: hScale,
+        h: isNaN(outHsl.h) ? 0 : outHsl.h,
+        hScale: 1,
         s: outHsl.s,
-        sScale: sScale,
+        sScale: 1,
         l: outHsl.l,
       });
     }
