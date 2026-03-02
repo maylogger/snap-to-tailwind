@@ -18,7 +18,7 @@
         }
 
         .wrap {
-            max-width: 980px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 16px;
         }
@@ -149,40 +149,40 @@
 
         .pill {
             padding: 4px 10px;
-            border-radius: 999px;
+            border-radius: 12px;
             border: 1px solid #e5e7eb;
             font-size: 12px;
             background: #fff;
+            min-height: 50px;
+            flex: 1;
+            display: flex;
+            align-items: end;
+            justify-content: end;
         }
     </style>
 </head>
 
 <body>
     <div class="wrap">
-        <h1>拍照抽色 → 背景 + 4 前景色 → 產生 Tailwind 50–950</h1>
-
         <div class="grid">
             <div class="card">
                 <div class="row">
                     <input id="file" type="file" accept="image/*" capture="environment" class="btn" />
-                    <button id="analyze" class="btn">分析並產生色票</button>
-                    <span id="status" class="muted">請先拍照或選圖。</span>
+                    <button id="analyze" class="btn">分析</button>
+                    <span id="status" class="muted">請先拍照或上傳圖片。</span>
                 </div>
                 <div style="height:10px"></div>
                 <canvas id="cvs" width="1" height="1"></canvas>
                 <div style="height:10px"></div>
-                <div class="muted">
-                    建議：照片越簡單、主體越集中，抽色越穩。此工具會先縮圖再抽樣，手機上通常可順暢運作。
-                </div>
             </div>
 
             <div class="card">
                 <div class="row" style="flex-wrap: wrap;">
-                    <span class="pill" id="pillBg">bg：<span id="bgHex">—</span></span>
-                    <span class="pill" id="pillFg1">fg1：<span id="fg1Hex">—</span></span>
-                    <span class="pill" id="pillFg2">fg2：<span id="fg2Hex">—</span></span>
-                    <span class="pill" id="pillFg3">fg3：<span id="fg3Hex">—</span></span>
-                    <span class="pill" id="pillFg4">fg4：<span id="fg4Hex">—</span></span>
+                    <span class="pill" id="pillBg"><span id="bgHex">—</span></span>
+                    <span class="pill" id="pillFg1"><span id="fg1Hex">—</span></span>
+                    <span class="pill" id="pillFg2"><span id="fg2Hex">—</span></span>
+                    <span class="pill" id="pillFg3"><span id="fg3Hex">—</span></span>
+                    <span class="pill" id="pillFg4"><span id="fg4Hex">—</span></span>
                 </div>
 
                 <div style="height:10px"></div>
@@ -508,16 +508,7 @@
 
         let currentImg = null;
 
-        fileEl.addEventListener("change", async () => {
-            const f = fileEl.files && fileEl.files[0];
-            if (!f) return;
-            statusEl.textContent = "載入圖片中…";
-            currentImg = await fileToImage(f);
-            drawToCanvas(currentImg, cvs, 420); // 縮圖上限
-            statusEl.textContent = "已載入，按「分析並產生色票」。";
-        });
-
-        analyzeBtn.addEventListener("click", async () => {
+        async function runAnalysis() {
             if (!currentImg) {
                 statusEl.textContent = "尚未選圖。";
                 return;
@@ -608,7 +599,18 @@
                 console.error(e);
                 statusEl.textContent = "分析失敗：" + (e && e.message ? e.message : String(e));
             }
+        }
+
+        fileEl.addEventListener("change", async () => {
+            const f = fileEl.files && fileEl.files[0];
+            if (!f) return;
+            statusEl.textContent = "載入圖片中…";
+            currentImg = await fileToImage(f);
+            drawToCanvas(currentImg, cvs, 420); // 縮圖上限
+            await runAnalysis(); // 拍照/上傳後自動分析
         });
+
+        analyzeBtn.addEventListener("click", () => runAnalysis());
 
         document.getElementById("copyJson").addEventListener("click", async () => {
             const txt = window.__EXPORT_JSON__ || "";
