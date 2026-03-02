@@ -40,18 +40,12 @@
             }
         }
 
-        .card {
-            background: #fff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 12px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
-        }
+        .card {}
 
         .row {
             display: flex;
             gap: 10px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             align-items: center;
         }
 
@@ -74,12 +68,6 @@
             line-height: 1.4;
         }
 
-        .preview {
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-            overflow: hidden;
-        }
-
         .swatches {
             display: grid;
             grid-template-columns: repeat(11, minmax(0, 1fr));
@@ -89,6 +77,34 @@
         .chip {
             border: 1px solid rgba(0, 0, 0, .08);
             height: 28px;
+            box-sizing: border-box;
+        }
+
+        /* 產生出來的五個顏色在 swatches 裡對應的那一格用粗框標示 */
+        .chip.chip--anchor {
+            border-width: 2px;
+            border-color: #333;
+            position: relative;
+        }
+
+        /* 粗框格內顯示打勾 */
+        .chip__check {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .chip__check svg {
+            width: 14px;
+            height: 14px;
+            filter: drop-shadow(0 0 1px rgba(0, 0, 0, .5)) drop-shadow(0 1px 1px rgba(0, 0, 0, .3));
+        }
+
+        .chip__check path {
+            fill: #fff;
         }
 
         textarea {
@@ -102,7 +118,7 @@
         }
 
         canvas {
-            max-width: 100%;
+            width: 100%;
             border-radius: 12px;
             border: 1px solid #e5e7eb;
             background: #fff;
@@ -127,18 +143,18 @@
     <div class="wrap">
         <div class="grid">
             <div class="card">
+                <canvas id="cvs" width="1" height="1"></canvas>
                 <div class="row">
                     <input id="file" type="file" accept="image/*" capture="environment" class="btn" />
                     <button id="analyze" class="btn">分析</button>
                     <span id="status" class="muted">請先拍照或上傳圖片。</span>
                 </div>
-                <div style="height:10px"></div>
-                <canvas id="cvs" width="1" height="1"></canvas>
-                <div style="height:10px"></div>
+
+
             </div>
 
             <div class="card">
-                <div class="row" style="flex-wrap: wrap;">
+                <div class="row">
                     <span class="pill" id="pillBg"><span id="bgHex">—</span></span>
                     <span class="pill" id="pillFg1"><span id="fg1Hex">—</span></span>
                     <span class="pill" id="pillFg2"><span id="fg2Hex">—</span></span>
@@ -148,26 +164,25 @@
 
                 <div style="height:10px"></div>
                 <div id="preview" class="preview">
-                    <div style="padding:14px">
-                        <div class="muted" style="font-weight:700;margin-bottom:6px;">bg</div>
-                        <div id="swBg" class="swatches"></div>
-                        <div style="height:10px"></div>
 
-                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg1</div>
-                        <div id="swFg1" class="swatches"></div>
-                        <div style="height:10px"></div>
+                    <div class="muted" style="font-weight:700;margin-bottom:6px;">bg</div>
+                    <div id="swBg" class="swatches"></div>
+                    <div style="height:10px"></div>
 
-                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg2</div>
-                        <div id="swFg2" class="swatches"></div>
-                        <div style="height:10px"></div>
+                    <div class="muted" style="font-weight:700;margin-bottom:6px;">fg1</div>
+                    <div id="swFg1" class="swatches"></div>
+                    <div style="height:10px"></div>
 
-                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg3</div>
-                        <div id="swFg3" class="swatches"></div>
-                        <div style="height:10px"></div>
+                    <div class="muted" style="font-weight:700;margin-bottom:6px;">fg2</div>
+                    <div id="swFg2" class="swatches"></div>
+                    <div style="height:10px"></div>
 
-                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg4</div>
-                        <div id="swFg4" class="swatches"></div>
-                    </div>
+                    <div class="muted" style="font-weight:700;margin-bottom:6px;">fg3</div>
+                    <div id="swFg3" class="swatches"></div>
+                    <div style="height:10px"></div>
+
+                    <div class="muted" style="font-weight:700;margin-bottom:6px;">fg4</div>
+                    <div id="swFg4" class="swatches"></div>
                 </div>
 
                 <div style="height:12px"></div>
@@ -181,6 +196,9 @@
         </div>
     </div>
 
+    <!-- 與 ref 一致：用 chroma-js（npm）算 value（HSL L / luminance） -->
+    <script src="vendor/chroma.js"></script>
+    <script src="shade-mapper.js"></script>
     <script>
         /* =========================
            小工具：sRGB <-> OKLab/OKLCH
@@ -262,6 +280,19 @@
             return (L1 + 0.05) / (L2 + 0.05);
         }
 
+        function inGamutRgb([r, g, b]) {
+            return r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255;
+        }
+        function oklchToRgbGamutMapped(L, C, h) {
+            let c = C;
+            for (let i = 0; i < 32; i++) {
+                const rgb = oklabToRgb(oklchToOklab([L, c, h]));
+                if (inGamutRgb(rgb)) return rgb;
+                c *= 0.95;
+            }
+            return oklabToRgb(oklchToOklab([L, 0, h]));
+        }
+
         /* =========================
            取樣 + K-means（輕量）
         ========================= */
@@ -334,41 +365,24 @@
         }
 
         /* =========================
-           產 Tailwind 50–950（OKLCH）
+           產 Tailwind 50–950：先算 valueStop，再以 valueStop 為錨點 createSwatches
+           依 ref/helpers.ts calculateStopFromColor（Auto/Perceived 用 luminance*100）
         ========================= */
-        const STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+        const STOPS = ShadeMapper.STOPS;
 
-        function lerp(a, b, t) { return a + (b - a) * t; }
-
-        // 依照距離 500 的程度，調 L 與 C
-        function makeOklchPalette(baseRgb) {
-            const [L0, C0, h0] = oklabToOklch(rgbToOklab(baseRgb));
-            // 自適應上下界：避免 base 本來就很亮/很暗時整條被夾死
-            const Lmax = clamp(Math.max(L0, 0.70) + 0.22, 0, 1);  // 亮端
-            const Lmin = clamp(Math.min(L0, 0.35) - 0.18, 0, 1);  // 暗端
-            const Cbase = clamp(C0, 0, 0.35);
-
+        function makePaletteFromHex(baseHex, colorMode) {
+            colorMode = colorMode || "perceived";
+            const valueStop = ShadeMapper.getShadeForColor(baseHex, colorMode);
+            const swatches = ShadeMapper.createSwatches({
+                value: baseHex,
+                valueStop: valueStop,
+            });
             const out = {};
-            for (const stop of STOPS) {
-                const dist = Math.abs(stop - 500) / 450; // 0..1（950 距離 500 是 450）
-                // L：在 50..500..950 做分段線性
-                let L;
-                if (stop <= 500) {
-                    const t = (stop - 50) / (500 - 50);
-                    L = lerp(Lmax, L0, t);
-                } else {
-                    const t = (stop - 500) / (950 - 500);
-                    L = lerp(L0, Lmin, t);
-                }
-                // C：兩端下降，中段保留（避免亮部螢光、暗部髒）
-                const C = clamp(Cbase * (1 - 0.55 * dist), 0, 0.35);
-
-                // hue：固定（若想要像某些生成器那樣偏移，可在這裡加 tweak）
-                const lab = oklchToOklab([clamp(L, 0, 1), C, h0]);
-                const rgb = oklabToRgb(lab);
-                out[stop] = rgbToHex(rgb);
+            for (let i = 0; i < swatches.length; i++) {
+                const s = swatches[i];
+                if (s.stop !== 0 && s.stop !== 1000) out[s.stop] = s.hex;
             }
-            return out;
+            return { palette: out, anchorStop: valueStop };
         }
 
         /* =========================
@@ -391,17 +405,31 @@
         function pickFgColors(ctx, w, h, bgRgb) {
             const pixels = samplePixels(ctx, w, h, { sx: 0, sy: 0, sw: w, sh: h, step: 4, max: 16000 });
             const clusters = kmeans(pixels, 14, 10);
+            const totalCount = clusters.reduce((s, c) => s + c.count, 0);
 
-            // 依對比度排序（高到低）
-            const scored = clusters.map(c => ({
-                rgb: c.rgb,
-                count: c.count,
-                contrast: contrastRatio(c.rgb, bgRgb)
-            })).sort((a, b) => b.contrast - a.contrast);
+            // 複合評分：√對比 × (1 + 鮮豔大面積加成 + 高對比大面積加成)
+            const scored = clusters.map(c => {
+                const contrast = contrastRatio(c.rgb, bgRgb);
+                const [, chroma] = oklabToOklch(rgbToOklab(c.rgb)); // OKLCH C 彩度，約 0~0.35
+                const coverage = c.count / totalCount;               // 像素面積佔比 0~1
+
+                // 鮮豔大面積加成：高彩度 + 佔較大面積，上限 4×3=12 倍
+                const chromaBoost = Math.min(Math.pow(chroma / 0.08, 1.5), 4);
+                const coverageBoost = Math.min(coverage / 0.08, 3);
+                // 高對比大面積加成：對比高且佔圖 > 5% 也額外加分，上限 3 倍
+                const contrastCoverageBoost = coverage > 0.01
+                    ? Math.min((contrast - 1) / 4, 3)
+                    : 0;
+                // 複合分數
+                const score = Math.sqrt(contrast) * (1 + chromaBoost * coverageBoost + contrastCoverageBoost);
+
+                return { rgb: c.rgb, count: c.count, contrast, chroma, coverage, score };
+            }).sort((a, b) => b.score - a.score);
 
             const fgList = [];
-            const minContrast = [4.5, 3.5, 3.0, 2.8]; // fg1～fg4 最低對比門檻
-            const dEThreshold = 0.06; // 與已選前景色需有差異
+            // 設計工具不強制 WCAG，放寬門檻讓鮮豔色也能進入結果
+            const minContrast = [1.5, 1.3, 1.2, 1.1];
+            const dEThreshold = 0.06; // 與已選前景色需有感知差異
 
             for (let i = 0; i < 4; i++) {
                 const threshold = minContrast[i];
@@ -476,11 +504,11 @@
                 const fg3Hex = rgbToHex(fg3);
                 const fg4Hex = rgbToHex(fg4);
 
-                const palBg = makeOklchPalette(bg);
-                const palFg1 = makeOklchPalette(fg1);
-                const palFg2 = makeOklchPalette(fg2);
-                const palFg3 = makeOklchPalette(fg3);
-                const palFg4 = makeOklchPalette(fg4);
+                const { palette: palBg, anchorStop: anchorBg } = makePaletteFromHex(bgHex);
+                const { palette: palFg1, anchorStop: anchorFg1 } = makePaletteFromHex(fg1Hex);
+                const { palette: palFg2, anchorStop: anchorFg2 } = makePaletteFromHex(fg2Hex);
+                const { palette: palFg3, anchorStop: anchorFg3 } = makePaletteFromHex(fg3Hex);
+                const { palette: palFg4, anchorStop: anchorFg4 } = makePaletteFromHex(fg4Hex);
 
                 bgHexEl.textContent = bgHex;
                 fg1HexEl.textContent = fg1Hex;
@@ -497,11 +525,11 @@
                     el.style.borderColor = "rgba(0,0,0,0.12)";
                 });
 
-                renderSwatches(swBg, palBg);
-                renderSwatches(swFg1, palFg1);
-                renderSwatches(swFg2, palFg2);
-                renderSwatches(swFg3, palFg3);
-                renderSwatches(swFg4, palFg4);
+                renderSwatches(swBg, palBg, anchorBg);
+                renderSwatches(swFg1, palFg1, anchorFg1);
+                renderSwatches(swFg2, palFg2, anchorFg2);
+                renderSwatches(swFg3, palFg3, anchorFg3);
+                renderSwatches(swFg4, palFg4, anchorFg4);
 
                 const tw = {
                     theme: {
@@ -528,14 +556,10 @@
                 ].join("\n");
 
                 outEl.value =
-                    "// Tailwind config 片段\n" +
+                    "// Tailwind config\n" +
                     JSON.stringify(tw, null, 2) +
-                    "\n\n// CSS 變數\n" +
+                    "\n\n// CSS Variables\n" +
                     cssVars;
-
-                // 暫存供複製
-                window.__EXPORT_JSON__ = JSON.stringify(tw, null, 2);
-                window.__EXPORT_CSS__ = cssVars;
 
                 statusEl.textContent = "完成。";
             } catch (e) {
@@ -568,13 +592,22 @@
             statusEl.textContent = "已複製 CSS 變數。";
         });
 
-        function renderSwatches(root, palette) {
+        function renderSwatches(root, palette, anchorStop) {
             root.innerHTML = "";
             for (const stop of STOPS) {
                 const hex = palette[stop];
+                const [L, C, h] = oklabToOklch(rgbToOklab(hexToRgb(hex)));
+                const oklchStr = `oklch(${(L).toFixed(3)} ${(C).toFixed(3)} ${(h).toFixed(0)})`;
                 const div = document.createElement("div");
-                div.className = "chip";
+                div.className = "chip" + (stop === anchorStop ? " chip--anchor" : "");
                 div.style.background = hex;
+                div.title = `${stop}: ${hex} · ${oklchStr}`;
+                if (stop === anchorStop) {
+                    const check = document.createElement("span");
+                    check.className = "chip__check";
+                    check.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+                    div.appendChild(check);
+                }
                 root.appendChild(div);
             }
         }

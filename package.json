@@ -1,0 +1,21 @@
+{
+  "name": "snap-to-tailwind",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:chroma": "esbuild build-chroma-entry.js --bundle --format=iife --outfile=vendor/chroma.js",
+    "postinstall": "pnpm run build:chroma"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.1",
+  "dependencies": {
+    "chroma-js": "^2.6.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3"
+  }
+}
