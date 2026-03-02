@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>拍照抽色 → 3 色（背景/主字/次字）→ Tailwind 50–950</title>
+    <style>
+        :root {
+            color-scheme: light;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+            margin: 0;
+            background: #f6f7f8;
+            color: #111;
+        }
+
+        .wrap {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        h1 {
+            font-size: 18px;
+            margin: 0 0 12px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        @media (min-width: 880px) {
+            .grid {
+                grid-template-columns: 1.2fr 0.8fr;
+            }
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .btn {
+            border: 1px solid #d1d5db;
+            background: #fff;
+            border-radius: 10px;
+            padding: 10px 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .muted {
+            color: #6b7280;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .preview {
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            overflow: hidden;
+        }
+
+        .previewTop {
+            display: flex;
+            gap: 10px;
+            padding: 14px;
+            align-items: baseline;
+        }
+
+        .previewTitle {
+            font-size: 18px;
+            font-weight: 800;
+        }
+
+        .previewSub {
+            font-size: 14px;
+        }
+
+        .swatches {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .chip {
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, .08);
+            overflow: hidden;
+        }
+
+        .chip .c {
+            height: 26px;
+        }
+
+        .chip .t {
+            font-size: 11px;
+            padding: 6px 6px 7px;
+            background: #fff;
+            color: #111;
+            border-top: 1px solid rgba(0, 0, 0, .06);
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 220px;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            padding: 10px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 12px;
+        }
+
+        canvas {
+            max-width: 100%;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+        }
+
+        .pill {
+            padding: 4px 10px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            font-size: 12px;
+            background: #fff;
+        }
+
+        .warn {
+            color: #92400e;
+            background: #fffbeb;
+            border-color: #fcd34d;
+        }
+
+        .ok {
+            color: #065f46;
+            background: #ecfdf5;
+            border-color: #6ee7b7;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <h1>拍照抽色 → 背景/主字/次字 → 產生 Tailwind 50–950</h1>
+
+        <div class="grid">
+            <div class="card">
+                <div class="row">
+                    <input id="file" type="file" accept="image/*" capture="environment" class="btn" />
+                    <button id="analyze" class="btn">分析並產生色票</button>
+                    <span id="status" class="muted">請先拍照或選圖。</span>
+                </div>
+                <div style="height:10px"></div>
+                <canvas id="cvs" width="1" height="1"></canvas>
+                <div style="height:10px"></div>
+                <div class="muted">
+                    建議：照片越簡單、主體越集中，抽色越穩。此工具會先縮圖再抽樣，手機上通常可順暢運作。
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="row" style="justify-content: space-between;">
+                    <div class="row">
+                        <span class="pill">bg：<span id="bgHex">—</span></span>
+                        <span class="pill">fg1：<span id="fg1Hex">—</span></span>
+                        <span class="pill">fg2：<span id="fg2Hex">—</span></span>
+                    </div>
+                    <div class="row">
+                        <span id="c1" class="pill">主字對比：—</span>
+                        <span id="c2" class="pill">次字對比：—</span>
+                    </div>
+                </div>
+
+                <div style="height:10px"></div>
+                <div id="preview" class="preview">
+                    <div id="previewTop" class="previewTop">
+                        <div class="previewTitle">標題文字（主）</div>
+                        <div class="previewSub">副標文字（次）</div>
+                    </div>
+                    <div style="padding:14px">
+                        <div class="muted">以下是以 bg/fg1/fg2 各自生成的 Tailwind 50–950（示意）。</div>
+                        <div style="height:10px"></div>
+
+                        <div class="muted" style="font-weight:700;margin-bottom:6px;">bg</div>
+                        <div id="swBg" class="swatches"></div>
+                        <div style="height:10px"></div>
+
+                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg1</div>
+                        <div id="swFg1" class="swatches"></div>
+                        <div style="height:10px"></div>
+
+                        <div class="muted" style="font-weight:700;margin-bottom:6px;">fg2</div>
+                        <div id="swFg2" class="swatches"></div>
+                    </div>
+                </div>
+
+                <div style="height:12px"></div>
+                <div class="row">
+                    <button id="copyJson" class="btn">複製 Tailwind JSON</button>
+                    <button id="copyCss" class="btn">複製 CSS 變數</button>
+                </div>
+                <div style="height:10px"></div>
+                <textarea id="out" readonly></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================
+           小工具：sRGB <-> OKLab/OKLCH
+           參考 OKLab 標準矩陣（前端可用）
+        ========================= */
+        function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+        function srgbToLinear(u) {
+            u = u / 255;
+            return (u <= 0.04045) ? (u / 12.92) : Math.pow((u + 0.055) / 1.055, 2.4);
+        }
+        function linearToSrgb(u) {
+            u = (u <= 0.0031308) ? (12.92 * u) : (1.055 * Math.pow(u, 1 / 2.4) - 0.055);
+            return clamp(Math.round(u * 255), 0, 255);
+        }
+        function rgbToOklab([r, g, b]) {
+            const R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b);
+            // linear RGB -> LMS
+            const l = 0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B;
+            const m = 0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B;
+            const s = 0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B;
+            const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+            const L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+            const a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+            const b2 = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+            return [L, a, b2];
+        }
+        function oklabToRgb([L, a, b]) {
+            // OKLab -> LMS'
+            const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+            const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+            const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+            const l = l_ * l_ * l_;
+            const m = m_ * m_ * m_;
+            const s = s_ * s_ * s_;
+            // LMS -> linear RGB
+            const R = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+            const G = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+            const B = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+            return [linearToSrgb(R), linearToSrgb(G), linearToSrgb(B)];
+        }
+        function oklabToOklch([L, a, b]) {
+            const C = Math.sqrt(a * a + b * b);
+            let h = Math.atan2(b, a) * 180 / Math.PI;
+            if (h < 0) h += 360;
+            return [L, C, h];
+        }
+        function oklchToOklab([L, C, h]) {
+            const hr = h * Math.PI / 180;
+            const a = C * Math.cos(hr);
+            const b = C * Math.sin(hr);
+            return [L, a, b];
+        }
+        function rgbToHex([r, g, b]) {
+            const to2 = v => v.toString(16).padStart(2, "0");
+            return ("#" + to2(r) + to2(g) + to2(b)).toUpperCase();
+        }
+        function hexToRgb(hex) {
+            const s = hex.replace("#", "").trim();
+            const v = (s.length === 3) ? s.split("").map(c => c + c).join("") : s;
+            return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+        }
+        function deltaE_oklab(rgb1, rgb2) {
+            const [L1, a1, b1] = rgbToOklab(rgb1);
+            const [L2, a2, b2] = rgbToOklab(rgb2);
+            const dL = L1 - L2, da = a1 - a2, db = b1 - b2;
+            return Math.sqrt(dL * dL + da * da + db * db);
+        }
+
+        /* =========================
+           WCAG 對比度（相對亮度）
+        ========================= */
+        function relLuminance([r, g, b]) {
+            const R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b);
+            return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+        }
+        function contrastRatio(rgbA, rgbB) {
+            const LA = relLuminance(rgbA), LB = relLuminance(rgbB);
+            const L1 = Math.max(LA, LB), L2 = Math.min(LA, LB);
+            return (L1 + 0.05) / (L2 + 0.05);
+        }
+
+        /* =========================
+           取樣 + K-means（輕量）
+        ========================= */
+        function samplePixels(ctx, w, h, opts) {
+            const { sx = 0, sy = 0, sw = w, sh = h, step = 4, max = 12000 } = opts || {};
+            const img = ctx.getImageData(sx, sy, sw, sh).data;
+            const out = [];
+            const stride = sw * 4;
+            for (let y = 0; y < sh; y += step) {
+                const row = y * stride;
+                for (let x = 0; x < sw; x += step) {
+                    const i = row + x * 4;
+                    const a = img[i + 3];
+                    if (a < 200) continue; // 略過透明
+                    out.push([img[i], img[i + 1], img[i + 2]]);
+                    if (out.length >= max) return out;
+                }
+            }
+            return out;
+        }
+
+        function kmeans(pixels, k = 10, iters = 10) {
+            if (!pixels.length) throw new Error("沒有可用像素");
+            // 初始化中心：隨機取樣
+            const centers = [];
+            for (let i = 0; i < k; i++) {
+                centers.push(pixels[(Math.random() * pixels.length) | 0].slice());
+            }
+            let assigns = new Array(pixels.length).fill(0);
+
+            for (let t = 0; t < iters; t++) {
+                // 指派
+                for (let i = 0; i < pixels.length; i++) {
+                    const p = pixels[i];
+                    let best = 0, bestD = 1e18;
+                    for (let c = 0; c < k; c++) {
+                        const cc = centers[c];
+                        const dr = p[0] - cc[0], dg = p[1] - cc[1], db = p[2] - cc[2];
+                        const d = dr * dr + dg * dg + db * db;
+                        if (d < bestD) { bestD = d; best = c; }
+                    }
+                    assigns[i] = best;
+                }
+                // 更新中心
+                const sum = Array.from({ length: k }, () => [0, 0, 0, 0]);
+                for (let i = 0; i < pixels.length; i++) {
+                    const a = assigns[i];
+                    const p = pixels[i];
+                    sum[a][0] += p[0]; sum[a][1] += p[1]; sum[a][2] += p[2]; sum[a][3] += 1;
+                }
+                for (let c = 0; c < k; c++) {
+                    if (sum[c][3] === 0) continue;
+                    centers[c] = [
+                        Math.round(sum[c][0] / sum[c][3]),
+                        Math.round(sum[c][1] / sum[c][3]),
+                        Math.round(sum[c][2] / sum[c][3])
+                    ];
+                }
+            }
+
+            // 計數
+            const counts = new Array(k).fill(0);
+            for (const a of assigns) counts[a]++;
+
+            // 回傳 clusters
+            const clusters = centers.map((rgb, i) => ({ rgb, count: counts[i] }))
+                .filter(x => x.count > 0)
+                .sort((a, b) => b.count - a.count);
+            return clusters;
+        }
+
+        /* =========================
+           產 Tailwind 50–950（OKLCH）
+        ========================= */
+        const STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+
+        function lerp(a, b, t) { return a + (b - a) * t; }
+
+        // 依照距離 500 的程度，調 L 與 C
+        function makeOklchPalette(baseRgb) {
+            const [L0, C0, h0] = oklabToOklch(rgbToOklab(baseRgb));
+            // 自適應上下界：避免 base 本來就很亮/很暗時整條被夾死
+            const Lmax = clamp(Math.max(L0, 0.70) + 0.22, 0, 1);  // 亮端
+            const Lmin = clamp(Math.min(L0, 0.35) - 0.18, 0, 1);  // 暗端
+            const Cbase = clamp(C0, 0, 0.35);
+
+            const out = {};
+            for (const stop of STOPS) {
+                const dist = Math.abs(stop - 500) / 450; // 0..1（950 距離 500 是 450）
+                // L：在 50..500..950 做分段線性
+                let L;
+                if (stop <= 500) {
+                    const t = (stop - 50) / (500 - 50);
+                    L = lerp(Lmax, L0, t);
+                } else {
+                    const t = (stop - 500) / (950 - 500);
+                    L = lerp(L0, Lmin, t);
+                }
+                // C：兩端下降，中段保留（避免亮部螢光、暗部髒）
+                const C = clamp(Cbase * (1 - 0.55 * dist), 0, 0.35);
+
+                // hue：固定（若想要像某些生成器那樣偏移，可在這裡加 tweak）
+                const lab = oklchToOklab([clamp(L, 0, 1), C, h0]);
+                const rgb = oklabToRgb(lab);
+                out[stop] = rgbToHex(rgb);
+            }
+            return out;
+        }
+
+        /* =========================
+           從照片挑 bg / fg1 / fg2
+        ========================= */
+        function pickBgFromBorder(ctx, w, h) {
+            const m = Math.round(Math.min(w, h) * 0.08); // 邊框厚度 8%
+            const step = 3;
+
+            const top = samplePixels(ctx, w, h, { sx: 0, sy: 0, sw: w, sh: m, step, max: 6000 });
+            const bot = samplePixels(ctx, w, h, { sx: 0, sy: h - m, sw: w, sh: m, step, max: 6000 });
+            const lef = samplePixels(ctx, w, h, { sx: 0, sy: 0, sw: m, sh: h, step, max: 6000 });
+            const rig = samplePixels(ctx, w, h, { sx: w - m, sy: 0, sw: m, sh: h, step, max: 6000 });
+            const border = top.concat(bot, lef, rig);
+
+            const clusters = kmeans(border, 6, 8);
+            return clusters[0].rgb;
+        }
+
+        function pickFgColors(ctx, w, h, bgRgb) {
+            const pixels = samplePixels(ctx, w, h, { sx: 0, sy: 0, sw: w, sh: h, step: 4, max: 16000 });
+            const clusters = kmeans(pixels, 12, 10);
+
+            // 依對比度排序
+            const scored = clusters.map(c => ({
+                rgb: c.rgb,
+                count: c.count,
+                contrast: contrastRatio(c.rgb, bgRgb)
+            })).sort((a, b) => b.contrast - a.contrast);
+
+            const fg1 = scored[0]?.rgb || [255, 255, 255];
+
+            // fg2：對比仍高，且與 fg1 有差異（OKLab 距離門檻）
+            let fg2 = null;
+            for (const s of scored.slice(1)) {
+                const dE = deltaE_oklab(s.rgb, fg1);
+                if (dE < 0.08) continue;                 // 太像就跳過
+                if (s.contrast < 3.0) continue;          // 次要文字至少 3.0
+                fg2 = s.rgb;
+                break;
+            }
+            if (!fg2) fg2 = scored[1]?.rgb || fg1;
+
+            return { fg1, fg2, c1: contrastRatio(fg1, bgRgb), c2: contrastRatio(fg2, bgRgb) };
+        }
+
+        /* =========================
+           UI 綁定
+        ========================= */
+        const fileEl = document.getElementById("file");
+        const analyzeBtn = document.getElementById("analyze");
+        const cvs = document.getElementById("cvs");
+        const statusEl = document.getElementById("status");
+        const outEl = document.getElementById("out");
+        const preview = document.getElementById("preview");
+        const previewTop = document.getElementById("previewTop");
+
+        const bgHexEl = document.getElementById("bgHex");
+        const fg1HexEl = document.getElementById("fg1Hex");
+        const fg2HexEl = document.getElementById("fg2Hex");
+        const c1El = document.getElementById("c1");
+        const c2El = document.getElementById("c2");
+
+        const swBg = document.getElementById("swBg");
+        const swFg1 = document.getElementById("swFg1");
+        const swFg2 = document.getElementById("swFg2");
+
+        let currentImg = null;
+
+        fileEl.addEventListener("change", async () => {
+            const f = fileEl.files && fileEl.files[0];
+            if (!f) return;
+            statusEl.textContent = "載入圖片中…";
+            currentImg = await fileToImage(f);
+            drawToCanvas(currentImg, cvs, 420); // 縮圖上限
+            statusEl.textContent = "已載入，按「分析並產生色票」。";
+        });
+
+        analyzeBtn.addEventListener("click", async () => {
+            if (!currentImg) {
+                statusEl.textContent = "尚未選圖。";
+                return;
+            }
+            try {
+                statusEl.textContent = "分析中…";
+                const ctx = cvs.getContext("2d", { willReadFrequently: true });
+                const w = cvs.width, h = cvs.height;
+
+                const bg = pickBgFromBorder(ctx, w, h);
+                const { fg1, fg2, c1, c2 } = pickFgColors(ctx, w, h, bg);
+
+                const bgHex = rgbToHex(bg);
+                const fg1Hex = rgbToHex(fg1);
+                const fg2Hex = rgbToHex(fg2);
+
+                bgHexEl.textContent = bgHex;
+                fg1HexEl.textContent = fg1Hex;
+                fg2HexEl.textContent = fg2Hex;
+
+                setContrastPill(c1El, c1, 4.5);
+                setContrastPill(c2El, c2, 3.0);
+
+                preview.style.background = bgHex;
+                previewTop.querySelector(".previewTitle").style.color = fg1Hex;
+                previewTop.querySelector(".previewSub").style.color = fg2Hex;
+
+                const palBg = makeOklchPalette(bg);
+                const palFg1 = makeOklchPalette(fg1);
+                const palFg2 = makeOklchPalette(fg2);
+
+                renderSwatches(swBg, palBg);
+                renderSwatches(swFg1, palFg1);
+                renderSwatches(swFg2, palFg2);
+
+                const tw = {
+                    theme: {
+                        extend: {
+                            colors: {
+                                photoBg: palBg,
+                                photoFg: palFg1,
+                                photoFg2: palFg2
+                            }
+                        }
+                    }
+                };
+
+                const cssVars = [
+                    ":root {",
+                    ...STOPS.map(s => `  --photo-bg-${s}: ${palBg[s]};`),
+                    ...STOPS.map(s => `  --photo-fg-${s}: ${palFg1[s]};`),
+                    ...STOPS.map(s => `  --photo-fg2-${s}: ${palFg2[s]};`),
+                    "}"
+                ].join("\n");
+
+                outEl.value =
+                    "// Tailwind config 片段\n" +
+                    JSON.stringify(tw, null, 2) +
+                    "\n\n// CSS 變數\n" +
+                    cssVars;
+
+                // 暫存供複製
+                window.__EXPORT_JSON__ = JSON.stringify(tw, null, 2);
+                window.__EXPORT_CSS__ = cssVars;
+
+                statusEl.textContent = "完成。";
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = "分析失敗：" + (e && e.message ? e.message : String(e));
+            }
+        });
+
+        document.getElementById("copyJson").addEventListener("click", async () => {
+            const txt = window.__EXPORT_JSON__ || "";
+            if (!txt) return;
+            await navigator.clipboard.writeText(txt);
+            statusEl.textContent = "已複製 Tailwind JSON。";
+        });
+        document.getElementById("copyCss").addEventListener("click", async () => {
+            const txt = window.__EXPORT_CSS__ || "";
+            if (!txt) return;
+            await navigator.clipboard.writeText(txt);
+            statusEl.textContent = "已複製 CSS 變數。";
+        });
+
+        function setContrastPill(el, ratio, okThreshold) {
+            const v = Number(ratio || 0);
+            el.textContent = `對比：${v.toFixed(2)}`;
+            el.classList.remove("ok", "warn");
+            el.classList.add(v >= okThreshold ? "ok" : "warn");
+        }
+
+        function renderSwatches(root, palette) {
+            root.innerHTML = "";
+            for (const stop of STOPS) {
+                const hex = palette[stop];
+                const div = document.createElement("div");
+                div.className = "chip";
+                div.innerHTML = `<div class="c" style="background:${hex}"></div><div class="t">${stop}<br>${hex}</div>`;
+                root.appendChild(div);
+            }
+        }
+
+        function fileToImage(file) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+
+        function drawToCanvas(img, canvas, maxW) {
+            const ratio = img.width / img.height;
+            const w = Math.min(maxW, img.width);
+            const h = Math.round(w / ratio);
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+        }
+    </script>
+</body>
+
+</html>
